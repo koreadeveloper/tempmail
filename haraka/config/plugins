@@ -1,0 +1,7 @@
+# List of plugins to enable
+# Standard plugins
+access
+rcpt_to.in_host_list
+data.headers
+# Custom plugin
+save_to_redis

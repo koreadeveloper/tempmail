@@ -1,0 +1,16 @@
+{
+  "name": "tempmail-backend",
+  "version": "1.0.0",
+  "description": "Fastify backend for tempmail",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "fastify": "^4.26.1",
+    "@fastify/cors": "^9.0.1",
+    "socket.io": "^4.7.4",
+    "ioredis": "^5.3.2"
+  }
+}

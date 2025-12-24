@@ -1,0 +1,16 @@
+# Dependency directories
+node_modules/
+
+# Build output
+dist/
+
+# Wrangler cache
+.wrangler/
+
+# Environment files
+.env
+.dev.vars
+
+# IDE
+.vscode/
+.idea/
