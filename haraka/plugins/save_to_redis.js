@@ -1,5 +1,7 @@
 const Redis = require('ioredis');
 const simpleParser = require('mailparser').simpleParser;
+const constants = require('haraka-constants');
+const OK = constants.ok;
 
 exports.register = function () {
     const plugin = this;

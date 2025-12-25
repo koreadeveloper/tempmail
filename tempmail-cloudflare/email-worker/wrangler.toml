@@ -2,9 +2,10 @@ name = "tempmail-email-worker"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
-# Environment variables (set these in Cloudflare Dashboard or use wrangler secret)
+# Environment variables (Cloudflare Dashboard에서 설정)
 # [vars]
-# SUPABASE_URL = "https://your-project.supabase.co"
+# SUPABASE_URL = "https://xxxxx.supabase.co"
 
-# Secrets (use `wrangler secret put SUPABASE_SERVICE_KEY`)
-# SUPABASE_SERVICE_KEY = "your-service-role-key"
+# Secrets (wrangler secret으로 설정)
+# wrangler secret put SUPABASE_URL
+# wrangler secret put SUPABASE_SERVICE_ROLE_KEY
