@@ -1,12 +1,37 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 // These should be set in .env.local
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Lazy client — module import must not throw during prerender when env vars are
+// absent (e.g. local builds). The error surfaces only when actually called.
+let _client: SupabaseClient | null = null;
+function getClient(): SupabaseClient {
+    if (!_client) {
+        if (!supabaseUrl || !supabaseAnonKey) {
+            throw new Error('Supabase env missing: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY');
+        }
+        _client = createClient(supabaseUrl, supabaseAnonKey);
+    }
+    return _client;
+}
+export const supabase = new Proxy({} as SupabaseClient, {
+    get: (_t, prop) => {
+        const client = getClient() as unknown as Record<string | symbol, unknown>;
+        const value = client[prop];
+        return typeof value === 'function' ? value.bind(client) : value;
+    },
+});
+export const SUPABASE_URL = supabaseUrl ?? ''; // exported for building storage URLs
 
-// Type definition for email
+export interface Attachment {
+    name: string;
+    size: number;
+    contentType: string;
+    path: string;
+}
+
 export interface Email {
     id: string;
     created_at: string;
@@ -15,42 +40,124 @@ export interface Email {
     subject: string;
     body_text: string;
     body_html: string;
+    attachments: Attachment[];
+    keep: boolean;
+    raw_mime?: string | null;
+}
+
+function normalizeAddress(address: string): string {
+    return address.trim().toLowerCase();
+}
+
+function isLocked(data: unknown): boolean {
+    return (
+        !!data &&
+        typeof data === 'object' &&
+        !Array.isArray(data) &&
+        (data as { error?: string }).error === 'locked'
+    );
 }
 
 /**
- * Fetch emails for a specific recipient address
- * @param recipientAddress - The email address to fetch emails for (e.g., "user@sia.kr")
+ * Fetch emails for an inbox via the get_emails RPC.
+ * The RPC returns either an array of email rows or { error: 'locked' }.
+ * Throws Error('locked') when the inbox is locked and the secret doesn't match.
  */
-export async function getEmailsByRecipient(recipientAddress: string): Promise<Email[]> {
-    const normalizedAddress = recipientAddress.toLowerCase();
+export async function getEmails(address: string, secret?: string | null): Promise<Email[]> {
+    const p_address = normalizeAddress(address);
 
-    const { data, error } = await supabase
-        .from('emails')
-        .select('*')
-        .eq('recipient', normalizedAddress)
-        .order('created_at', { ascending: false });
+    const { data, error } = await supabase.rpc('get_emails', {
+        p_address,
+        p_secret: secret ?? null,
+    });
 
-    if (error) {
-        console.error('Error fetching emails:', error);
-        throw error;
-    }
+    if (error) throw error;
+    if (data && data.error === 'locked') throw new Error('locked');
 
-    return data || [];
+    return ((data ?? []) as Email[]).map(row => ({
+        ...row,
+        attachments: row.attachments ?? [],
+    }));
 }
 
 /**
- * Subscribe to realtime email updates for a specific recipient
- * @param recipientAddress - The email address to watch
- * @param onNewEmail - Callback function when new email arrives
+ * Delete an email via the delete_email RPC.
+ * Throws Error('locked') when the inbox is locked and the secret doesn't match.
+ */
+export async function deleteEmail(
+    id: string,
+    address: string,
+    secret?: string | null
+): Promise<void> {
+    const { data, error } = await supabase.rpc('delete_email', {
+        p_id: id,
+        p_address: normalizeAddress(address),
+        p_secret: secret ?? null,
+    });
+
+    if (error) throw error;
+    if (isLocked(data)) throw new Error('locked');
+}
+
+/**
+ * Set/clear the keep flag on an email via the set_keep RPC.
+ * Throws Error('locked') when the inbox is locked and the secret doesn't match.
+ */
+export async function setKeep(
+    id: string,
+    address: string,
+    keep: boolean,
+    secret?: string | null
+): Promise<void> {
+    const { data, error } = await supabase.rpc('set_keep', {
+        p_id: id,
+        p_address: normalizeAddress(address),
+        p_keep: keep,
+        p_secret: secret ?? null,
+    });
+
+    if (error) throw error;
+    if (isLocked(data)) throw new Error('locked');
+}
+
+/**
+ * Reserve an inbox address via the create_inbox RPC.
+ * Returns { ok, locked, existing } — `existing` means the address was already
+ * reserved; `locked` reports the stored locked state (useful when `existing`).
+ */
+export async function createInbox(
+    address: string,
+    secret: string,
+    locked: boolean
+): Promise<{ ok: boolean; locked: boolean; existing: boolean }> {
+    const { data, error } = await supabase.rpc('create_inbox', {
+        p_address: normalizeAddress(address),
+        p_secret: secret,
+        p_locked: locked,
+    });
+
+    if (error) throw error;
+
+    return {
+        ok: !!data?.ok,
+        locked: !!data?.locked,
+        existing: !!data?.existing,
+    };
+}
+
+/**
+ * Subscribe to realtime INSERTs on public.emails for a recipient.
+ * NOTE: works for PUBLIC inboxes only — locked inboxes aren't in the realtime
+ * publication; callers should poll instead.
  */
 export function subscribeToEmails(
-    recipientAddress: string,
+    address: string,
     onNewEmail: (email: Email) => void
-) {
-    const normalizedAddress = recipientAddress.toLowerCase();
+): { unsubscribe(): void } {
+    const normalizedAddress = normalizeAddress(address);
 
-    const subscription = supabase
-        .channel('emails-channel')
+    const channel = supabase
+        .channel(`emails-${normalizedAddress}`)
         .on(
             'postgres_changes',
             {
@@ -60,27 +167,25 @@ export function subscribeToEmails(
                 filter: `recipient=eq.${normalizedAddress}`,
             },
             (payload) => {
-                console.log('New email received:', payload.new);
-                onNewEmail(payload.new as Email);
+                const email = payload.new as Email;
+                email.attachments = email.attachments ?? [];
+                onNewEmail(email);
             }
         )
         .subscribe();
 
-    return subscription;
+    return {
+        unsubscribe() {
+            void supabase.removeChannel(channel);
+        },
+    };
 }
 
 /**
- * Delete an email by ID
- * @param emailId - The UUID of the email to delete
+ * Build a public Supabase Storage URL for an attachment path.
+ * Each /-separated path segment is URI-encoded so spaces/special chars survive.
  */
-export async function deleteEmail(emailId: string): Promise<void> {
-    const { error } = await supabase
-        .from('emails')
-        .delete()
-        .eq('id', emailId);
-
-    if (error) {
-        console.error('Error deleting email:', error);
-        throw error;
-    }
+export function attachmentUrl(path: string): string {
+    const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+    return `${SUPABASE_URL}/storage/v1/object/public/attachments/${encodedPath}`;
 }

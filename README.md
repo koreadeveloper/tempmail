@@ -1,187 +1,78 @@
-# 📧 일회용 이메일 서비스 (TempMail) 배포 가이드
+<div align="center">
+  <img src="assets/logo.svg" alt="TempMail logo" width="120" />
 
-이 문서는 이 프로젝트를 실제 서버(Ubuntu VPS 기준)에 배포하여 서비스하는 방법을 상세하게 설명합니다.
+  <h1>TempMail — 1회용 이메일 서비스</h1>
 
-## 📋 1. 준비물
+  <p>
+    회원가입 없이 즉시 생성되는 <strong>1시간 임시 이메일</strong>.<br />
+    Cloudflare Email Routing + Supabase + Next.js로 구현한 <strong>완전 서버리스</strong> 임시 메일 서비스입니다.
+  </p>
 
-1.  **도메인 (Domain)**: 예: `mytempmail.com`
-    *   Namecheap, Godaddy, 가비아 등에서 구입 가능합니다.
-2.  **클라우드 서버 (VPS)**: AWS EC2, DigitalOcean, Vultr, Linode 등.
-    *   **중요**: **25번 포트(SMTP)**가 열려 있어야 메일을 수신할 수 있습니다. 일부 클라우드(Google Cloud, AWS 일부 인스턴스)는 기본적으로 25번 포트 수신을 차단할 수 있으니 확인이 필요합니다.
-    *   OS 권장: **Ubuntu 22.04 LTS**
-    *   사양 권장: 2GB RAM 이상 (Node.js 서비스 2개 + Redis + Haraka 구동).
-
----
-
-## 🌐 2. DNS 설정
-
-도메인 관리 페이지의 DNS 설정에서 다음 레코드를 추가해야 합니다.
-
-| 유형 (Type) | 호스트 (Host/Name) | 값 (Value/Points to) | 설명 |
-| :--- | :--- | :--- | :--- |
-| **A** | `@` | `서버_IP_주소` | 루트 도메인 (예: mytempmail.com) 연결 |
-| **A** | `www` | `서버_IP_주소` | www 서브도메인 연결 |
-| **A** | `mail` | `서버_IP_주소` | 메일 서버 호스트명 |
-| **MX** | `@` | `mail.mytempmail.com` | **중요**: 메일 수신을 위한 MX 레코드 (우선순위 10) |
-
-> **참고**: DNS 변경 사항이 전파되는 데 최대 24시간이 걸릴 수 있습니다.
+  <p>
+    <a href="https://tempmail-fawn.vercel.app"><img src="https://img.shields.io/badge/Live%20Demo-tempmail--fawn.vercel.app-6366f1?style=flat-square&logo=vercel&logoColor=white" alt="Live Demo" /></a>
+    <img src="https://img.shields.io/badge/Next.js-14-000000?style=flat-square&logo=next.js&logoColor=white" alt="Next.js 14" />
+    <img src="https://img.shields.io/badge/Cloudflare-Email%20Worker-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Email Worker" />
+    <img src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20Realtime%20%2B%20Storage-3ECF8E?style=flat-square&logo=supabase&logoColor=white" alt="Supabase" />
+  </p>
+</div>
 
 ---
 
-## 🛠️ 3. 서버 초기 설정 (Ubuntu)
+## ✨ 주요 기능
 
-SSH로 서버에 접속한 후 다음 명령어를 실행하여 필수 패키지를 설치합니다.
+- **즉시 주소 생성** — 원하는 아이디로 `...@sia.kr` 주소를 바로 발급. 회원가입·로그인 불필요
+- **실시간 수신함** — Supabase Realtime 구독으로 메일이 도착하는 순간 화면에 표시 (새 메일 브라우저 알림 포함)
+- **OTP / 인증번호 자동 추출** — 본문에서 인증 코드를 자동 인식해 원클릭 복사
+- **첨부파일 지원** — Supabase Storage 업로드 (개당 최대 5MB), 클릭 한 번으로 다운로드
+- **1시간 자동 삭제** — 메일별 60분 수명 (pg_cron), `보관(keep)` 토글로 필요한 메일은 예외 처리
+- **잠금 수신함** — 생성 시 발급되는 비밀 키(`?k=`)가 있어야만 열람 가능한 비공개 모드
+- **mailto 전달 & EML 다운로드** — 받은 메일을 내 메일앱으로 전달하거나 `.eml` 원본 저장
+- **멀티 주소 바** — 여러 임시 주소를 동시에 띄워두고 전환하며 사용
 
-### 3.1 Docker 설치
+## 🏗️ 아키텍처
 
-```bash
-# 패키지 목록 업데이트
-sudo apt update
-sudo apt upgrade -y
-
-# 필수 패키지 설치
-sudo apt install apt-transport-https ca-certificates curl software-properties-common -y
-
-# Docker GPG 키 추가
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-
-# Docker Repository 추가
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-# Docker 설치
-sudo apt update
-sudo apt install docker-ce docker-ce-cli containerd.io docker-compose-plugin -y
-
-# Docker 서비스 시작 확인
-sudo systemctl status docker
+```mermaid
+flowchart LR
+    A["📮 보낸 사람"] -->|SMTP / MX| B["Cloudflare<br/>Email Routing"]
+    B --> C["Email Worker<br/>postal-mime 파싱"]
+    C -->|service_role| D[("Supabase<br/>Postgres · Realtime · Storage")]
+    E["🖥️ 브라우저"] --> F["Vercel<br/>Next.js 14"]
+    F <-->|"Realtime 구독 · RPC"| D
 ```
 
----
+메일 수신은 Cloudflare가, 저장·실시간 푸시는 Supabase가, UI는 Vercel이 담당합니다.
+서버(VPS) 없이 세 서비스의 무료 한도 안에서 운영됩니다.
 
-## 🚀 4. 프로젝트 설치 및 실행
+## 📁 프로젝트 구조
 
-### 4.1 프로젝트 다운로드
-
-```bash
-# 홈 디렉토리로 이동
-cd ~
-
-# 프로젝트 클론 (GitHub 주소 입력)
-git clone https://your-repository-url/tempmail.git
-
-# 디렉토리 이동
-cd tempmail
+```
+tempmail/
+├── tempmail-cloudflare/        # ✅ 현재 프로덕션 (서버리스)
+│   ├── email-worker/           #   Cloudflare Email Worker — 메일 수신·파싱·Supabase 저장
+│   ├── frontend/               #   Next.js 14 프론트엔드 — Vercel 배포
+│   └── supabase/               #   DB 스키마 · RPC 함수 · pg_cron (schema.sql)
+│
+├── backend/                    # 레거시: Fastify API + Socket.io (VPS)
+├── frontend/                   # 레거시: Next.js 프론트엔드 (VPS)
+├── haraka/                     # 레거시: Haraka SMTP 서버 → Redis 저장
+└── docker-compose.yml          # 레거시: 전체 스택 오케스트레이션
 ```
 
-> 만약 로컬에 있는 코드를 올리는 경우라면, `scp`나 `ftp`를 이용해 서버로 파일을 전송하세요.
+## 🚀 배포 가이드
 
-### 4.2 프로덕션 환경 최적화 (선택 사항)
+프로덕션 버전(`tempmail-cloudflare/`) 배포 요약 — 상세 단계는
+**[tempmail-cloudflare/README.md](tempmail-cloudflare/README.md)** 를 참조하세요.
 
-`docker-compose.yml` 파일에서 `frontend` 서비스를 빌드할 때 프로덕션용으로 설정되어 있는지 확인합니다. 현재 설정은 그대로 사용해도 무방합니다.
+1. **Supabase** — 프로젝트 생성 후 SQL Editor에서 `supabase/schema.sql` 실행
+   (테이블 `emails` / `emails_locked` / `inbox_keys`, RPC 함수, `attachments` 버킷 포함)
+2. **Cloudflare** — 도메인 네임서버 이전 → Email Routing 활성화 → Catch-all을 Email Worker로 지정
+3. **Email Worker** — `wrangler secret put SUPABASE_SERVICE_ROLE_KEY` 후 `npm run deploy`
+4. **Frontend** — `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` 설정 후 Vercel 배포
 
-### 4.3 서비스 실행
+## ⚙️ 레거시 VPS 버전
 
-```bash
-# 백그라운드 모드(-d)로 Docker Compose 실행
-sudo docker compose up -d --build
-```
+루트의 `backend/` · `frontend/` · `haraka/` · `docker-compose.yml`은 초기 VPS 기반 구현입니다
+(Haraka SMTP → Redis → Fastify/Socket.io → Next.js).
 
-실행 후 상태 확인:
-```bash
-sudo docker compose ps
-```
-모든 컨테이너(`tempmail-frontend`, `tempmail-backend`, `tempmail-smtp`, `tempmail-redis`)가 `Up` 상태여야 합니다.
-
----
-
-## 🔒 5. HTTPS 적용 (Nginx & Let's Encrypt)
-
-웹 브라우저에서 보안 경고가 뜨지 않게 하고 80/443 포트를 사용하려면 **Nginx**를 앞단에 두는 것이 좋습니다.
-
-### 5.1 Nginx설치
-
-```bash
-sudo apt install nginx -y
-```
-
-### 5.2 Nginx 설정 파일 작성
-
-`/etc/nginx/sites-available/tempmail` 파일을 생성합니다.
-
-```nginx
-server {
-    server_name mytempmail.com www.mytempmail.com;
-
-    location / {
-        proxy_pass http://localhost:3000; # Frontend Next.js
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # Socket.io 및 API 요청 프록시 (Backend)
-    # 클라이언트(프론트엔드) 코드에서 Socket 연결 주소를 도메인으로 변경해야 함에 유의
-    location /socket.io/ {
-        proxy_pass http://localhost:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-
-    location /api/ {
-        proxy_pass http://localhost:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-    }
-}
-```
-
-> **주의**: 프론트엔드 코드(`frontend/app/inbox/[address]/page.tsx`) 내의 `API_URL`을 `http://localhost:8080`에서 `https://mytempmail.com` (본인 도메인)으로 변경하고 다시 빌드해야 합니다.
-
-### 5.3 설정 적용
-
-```bash
-# 심볼릭 링크 생성
-sudo ln -s /etc/nginx/sites-available/tempmail /etc/nginx/sites-enabled/
-
-# 기본 설정 제거 (필요시)
-sudo rm /etc/nginx/sites-enabled/default
-
-# 문법 검사 및 재시작
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
-### 5.4 SSL 인증서 발급 (Certbot)
-
-무료 SSL 인증서인 Let's Encrypt를 적용합니다.
-
-```bash
-sudo apt install certbot python3-certbot-nginx -y
-
-# 인증서 발급 및 Nginx 자동 설정
-sudo certbot --nginx -d mytempmail.com -d www.mytempmail.com
-```
-
----
-
-## ✅ 6. 최종 확인
-
-1.  브라우저에서 `https://mytempmail.com` 접속.
-2.  아이디 입력 후 이메일 생성.
-3.  다른 이메일(Gmail, Naver 등)에서 방금 생성한 주소(`user@mytempmail.com`)로 메일 발송.
-4.  웹페이지 수신함에 메일이 실시간으로 도착하는지 확인.
-
-## ❓ 문제 해결 (Troubleshooting)
-
-*   **메일이 오지 않을 때**:
-    *   서버의 25번 포트가 열려 있는지 확인 (`telnet YourServerIP 25` 를 외부에서 실행해보기).
-    *   Docker 로그 확인: `sudo docker compose logs -f smtp`.
-    *   DNS MX 레코드가 올바른지 확인 (`dig mx mytempmail.com`).
-
-*   **웹사이트 접속 불가**:
-    *   보안 그룹(방화벽)에서 80, 443 포트가 열려 있는지 확인.
-    *   Nginx 상태 확인: `sudo systemctl status nginx`.
+25번 포트가 열린 서버와 MX 레코드가 필요하며, 현재는 서버리스 버전
+(`tempmail-cloudflare/`)이 프로덕션으로 운영 중입니다. 레거시 스택은 참고용으로 유지됩니다.

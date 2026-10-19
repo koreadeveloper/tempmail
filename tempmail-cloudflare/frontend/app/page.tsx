@@ -2,30 +2,58 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Mail, ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowRight, Sparkles, Lock } from 'lucide-react';
+import { createInbox } from '@/lib/supabase';
+
+const DOMAINS = ['sia.kr', 'mail.sia.kr'];
 
 export default function Home() {
     const [username, setUsername] = useState('');
-    const [domain] = useState('sia.kr'); // Your domain here
+    const [domain, setDomain] = useState(DOMAINS[0]);
+    const [locked, setLocked] = useState(false);
     const router = useRouter();
     const [history, setHistory] = useState<string[]>([]);
 
     useEffect(() => {
         const stored = localStorage.getItem('tempmail_history');
         if (stored) {
-            setHistory(JSON.parse(stored));
+            try {
+                setHistory(JSON.parse(stored));
+            } catch {
+                setHistory([]);
+            }
         }
     }, []);
 
-    const handleCreate = () => {
+    const handleCreate = async () => {
         if (!username) return;
         const fullEmail = `${username.toLowerCase()}@${domain}`;
+        // Always generate a secret — it reserves the address; `locked` controls privacy
+        const secret = crypto.randomUUID();
 
-        // Save to history
-        const newHistory = [fullEmail, ...history.filter(h => h !== fullEmail)].slice(0, 10);
+        try {
+            const res = await createInbox(fullEmail, secret, locked);
+            if (res.existing && res.locked === true && !locked) {
+                alert('이 주소는 이미 잠긴 수신함입니다');
+                return;
+            }
+        } catch (e) {
+            // Don't block UX — still navigate even if reservation fails
+            console.error('createInbox failed:', e);
+        }
+
+        // Save to history (keep ?k=secret for locked inboxes so deep links keep the key)
+        const entry = locked ? `${fullEmail}?k=${secret}` : fullEmail;
+        const newHistory = [entry, ...history.filter(h => h.split('?k=')[0] !== fullEmail)].slice(0, 10);
         localStorage.setItem('tempmail_history', JSON.stringify(newHistory));
+        window.dispatchEvent(new Event('history-updated'));
 
-        router.push(`/inbox/${encodeURIComponent(fullEmail)}`);
+        router.push(`/inbox/${encodeURIComponent(fullEmail)}${locked ? `?k=${secret}` : ''}`);
+    };
+
+    const openEntry = (entry: string) => {
+        const [addr, key] = entry.split('?k=');
+        router.push(`/inbox/${encodeURIComponent(addr)}${key ? `?k=${key}` : ''}`);
     };
 
     const handleRandom = () => {
@@ -38,9 +66,7 @@ export default function Home() {
             <div className="w-full max-w-md">
                 {/* Logo Section */}
                 <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center p-4 bg-blue-500 rounded-2xl mb-4">
-                        <Mail className="h-12 w-12 text-white" />
-                    </div>
+                    <img src="/logo.svg" alt="TempMail" className="h-12 w-12 mx-auto mb-4" />
                     <h1 className="text-4xl font-bold text-gray-900 mb-2">TempMail</h1>
                     <p className="text-gray-500">회원가입 없이 바로 사용하는 1회용 이메일</p>
                 </div>
@@ -58,10 +84,34 @@ export default function Home() {
                                 onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
                                 className="flex-1 h-12 px-4 text-lg border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             />
-                            <div className="h-12 px-4 flex items-center bg-gray-100 rounded-lg text-gray-500 font-medium">
-                                @{domain}
-                            </div>
+                            {DOMAINS.length > 1 ? (
+                                <select
+                                    value={domain}
+                                    onChange={(e) => setDomain(e.target.value)}
+                                    className="h-12 px-3 bg-gray-100 rounded-lg text-gray-500 font-medium border-0 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                >
+                                    {DOMAINS.map(d => (
+                                        <option key={d} value={d}>@{d}</option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <div className="h-12 px-4 flex items-center bg-gray-100 rounded-lg text-gray-500 font-medium">
+                                    @{domain}
+                                </div>
+                            )}
                         </div>
+
+                        {/* Private Inbox Checkbox */}
+                        <label className="flex items-center gap-2 cursor-pointer select-none px-1">
+                            <input
+                                type="checkbox"
+                                checked={locked}
+                                onChange={(e) => setLocked(e.target.checked)}
+                                className="h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                            />
+                            <Lock className="h-4 w-4 text-gray-500" />
+                            <span className="text-sm text-gray-700">비공개 수신함 (비밀키로만 열람)</span>
+                        </label>
 
                         {/* Random Button */}
                         <button
@@ -89,16 +139,22 @@ export default function Home() {
                     <div className="mt-8">
                         <h3 className="text-sm text-gray-500 mb-3 px-1">최근 사용한 이메일</h3>
                         <div className="space-y-2">
-                            {history.map(email => (
-                                <div
-                                    key={email}
-                                    onClick={() => router.push(`/inbox/${encodeURIComponent(email)}`)}
-                                    className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:shadow-md transition-shadow"
-                                >
-                                    <span className="text-gray-700">{email}</span>
-                                    <ArrowRight className="h-4 w-4 text-gray-400" />
-                                </div>
-                            ))}
+                            {history.map(entry => {
+                                const [addr, key] = entry.split('?k=');
+                                return (
+                                    <div
+                                        key={entry}
+                                        onClick={() => openEntry(entry)}
+                                        className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:shadow-md transition-shadow"
+                                    >
+                                        <span className="text-gray-700 flex items-center gap-1.5">
+                                            {addr}
+                                            {key && <Lock className="h-3.5 w-3.5 text-gray-400" />}
+                                        </span>
+                                        <ArrowRight className="h-4 w-4 text-gray-400" />
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 )}
