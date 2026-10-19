@@ -189,3 +189,64 @@ export function attachmentUrl(path: string): string {
     const encodedPath = path.split('/').map(encodeURIComponent).join('/');
     return `${SUPABASE_URL}/storage/v1/object/public/attachments/${encodedPath}`;
 }
+
+/* ===== 관리자 RPC ===== */
+
+export interface AdminEmailRow {
+    id: string;
+    created_at: string;
+    recipient: string;
+    sender: string;
+    subject: string;
+    keep: boolean;
+    attachment_count: number;
+    has_raw: boolean;
+    box: 'public' | 'locked';
+}
+
+/** 관리자 메일 목록 (공개+잠금 전체). 실패 시 Error('forbidden'). */
+export async function adminListEmails(secret: string, limit = 200): Promise<AdminEmailRow[]> {
+    const { data, error } = await supabase.rpc('admin_list_emails', {
+        p_secret: secret,
+        p_limit: limit,
+    });
+    if (error) throw error;
+    if (data && data.error === 'forbidden') throw new Error('forbidden');
+    return (data ?? []) as AdminEmailRow[];
+}
+
+/** 관리자 단일 메일 상세 (본문 포함). */
+export async function adminGetEmail(secret: string, id: string): Promise<Email | null> {
+    const { data, error } = await supabase.rpc('admin_get_email', {
+        p_secret: secret,
+        p_id: id,
+    });
+    if (error) throw error;
+    if (data && data.error === 'forbidden') throw new Error('forbidden');
+    return (data ?? null) as Email | null;
+}
+
+/** 관리자 메일 삭제 (테이블 무관, id 기준). */
+export async function adminDeleteEmail(secret: string, id: string): Promise<void> {
+    const { data, error } = await supabase.rpc('admin_delete_email', {
+        p_secret: secret,
+        p_id: id,
+    });
+    if (error) throw error;
+    if (data && data.error === 'forbidden') throw new Error('forbidden');
+}
+
+/** 관리자 발신 (서버 API 경유 — Resend). */
+export async function adminSendEmail(
+    secret: string,
+    payload: { fromLocalpart: string; fromDomain: string; fromName?: string; to: string; subject: string; text: string }
+): Promise<{ id?: string }> {
+    const res = await fetch('/api/admin/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret, ...payload }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `send failed: ${res.status}`);
+    return data;
+}
