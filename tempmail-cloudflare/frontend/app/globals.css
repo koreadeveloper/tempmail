@@ -6,42 +6,31 @@
     :root {
         --background: 0 0% 100%;
         --foreground: 222.2 84% 4.9%;
-        --card: 0 0% 100%;
-        --card-foreground: 222.2 84% 4.9%;
-        --primary: 221.2 83.2% 53.3%;
-        --primary-foreground: 210 40% 98%;
-        --secondary: 210 40% 96.1%;
-        --secondary-foreground: 222.2 47.4% 11.2%;
-        --muted: 210 40% 96.1%;
-        --muted-foreground: 215.4 16.3% 46.9%;
-        --accent: 210 40% 96.1%;
-        --accent-foreground: 222.2 47.4% 11.2%;
-        --destructive: 0 84.2% 60.2%;
-        --destructive-foreground: 210 40% 98%;
         --border: 214.3 31.8% 91.4%;
         --input: 214.3 31.8% 91.4%;
         --ring: 221.2 83.2% 53.3%;
         --radius: 0.5rem;
+
+        /* TempMail design tokens (PRIMARY 시안 기준) */
+        --tm-bg: #F9FBFF;
+        --tm-ink: #182542;
+        --tm-muted: #8B96AE;
+        --tm-border: #E8ECF7;
+        --tm-card: #FFFFFF;
+        --tm-soft: #F0EDFE;
+        --tm-soft-ink: #6A5AE0;
+        --tm-grad-from: #8560F7;
+        --tm-grad-to: #516EFF;
     }
 
-    .dark {
-        --background: 222.2 84% 4.9%;
-        --foreground: 210 40% 98%;
-        --card: 222.2 84% 4.9%;
-        --card-foreground: 210 40% 98%;
-        --primary: 217.2 91.2% 59.8%;
-        --primary-foreground: 222.2 47.4% 11.2%;
-        --secondary: 217.2 32.6% 17.5%;
-        --secondary-foreground: 210 40% 98%;
-        --muted: 217.2 32.6% 17.5%;
-        --muted-foreground: 215 20.2% 65.1%;
-        --accent: 217.2 32.6% 17.5%;
-        --accent-foreground: 210 40% 98%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 210 40% 98%;
-        --border: 217.2 32.6% 17.5%;
-        --input: 217.2 32.6% 17.5%;
-        --ring: 224.3 76.3% 48%;
+    html.dark {
+        --tm-bg: #0E1526;
+        --tm-ink: #E9EDF8;
+        --tm-muted: #7E89A5;
+        --tm-border: #242E48;
+        --tm-card: #171F35;
+        --tm-soft: #252D49;
+        --tm-soft-ink: #B3A8F5;
     }
 }
 
@@ -50,8 +39,134 @@
         border-color: hsl(var(--border));
     }
 
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
     body {
-        background-color: hsl(var(--background));
-        color: hsl(var(--foreground));
+        background-color: var(--tm-bg);
+        color: var(--tm-ink);
+        font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
+            system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo',
+            'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    }
+}
+
+@layer components {
+    /* 보라→파랑 그라데이션 CTA */
+    .tm-btn-gradient {
+        background: linear-gradient(105deg, var(--tm-grad-from) 0%, var(--tm-grad-to) 100%);
+        color: #fff;
+        font-weight: 700;
+        border-radius: 14px;
+        box-shadow: 0 8px 20px -6px rgba(104, 100, 248, 0.45);
+        transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+    }
+    .tm-btn-gradient:hover:not(:disabled) {
+        filter: brightness(1.05);
+        box-shadow: 0 10px 24px -6px rgba(104, 100, 248, 0.55);
+    }
+    .tm-btn-gradient:active:not(:disabled) {
+        transform: scale(.98);
+    }
+    .tm-btn-gradient:disabled {
+        opacity: .45;
+        box-shadow: none;
+        cursor: not-allowed;
+    }
+
+    /* 연보라 보조 버튼 */
+    .tm-btn-soft {
+        background: var(--tm-soft);
+        color: var(--tm-soft-ink);
+        font-weight: 600;
+        border-radius: 14px;
+        transition: background .12s ease, transform .12s ease;
+    }
+    .tm-btn-soft:hover:not(:disabled) { filter: brightness(0.97); }
+    html.dark .tm-btn-soft:hover:not(:disabled) { filter: brightness(1.15); }
+    .tm-btn-soft:active:not(:disabled) { transform: scale(.98); }
+
+    /* 카드 */
+    .tm-card {
+        background: var(--tm-card);
+        border: 1px solid var(--tm-border);
+        border-radius: 20px;
+        box-shadow: 0 2px 12px -4px rgba(24, 37, 66, 0.06);
+    }
+
+    /* 그라데이션 텍스트 */
+    .tm-text-grad {
+        background: linear-gradient(105deg, var(--tm-grad-from), var(--tm-grad-to));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+
+    /* 입력창 */
+    .tm-input {
+        background: var(--tm-card);
+        border: 1px solid var(--tm-border);
+        border-radius: 14px;
+        color: var(--tm-ink);
+        transition: border-color .12s ease, box-shadow .12s ease;
+    }
+    .tm-input::placeholder { color: #B4BCCF; }
+    .tm-input:focus {
+        outline: none;
+        border-color: var(--tm-grad-from);
+        box-shadow: 0 0 0 3px rgba(133, 96, 247, 0.12);
+    }
+
+    /* 필터 칩 */
+    .tm-chip {
+        border-radius: 999px;
+        font-weight: 600;
+        font-size: 13px;
+        padding: 7px 15px;
+        background: var(--tm-card);
+        color: #6B7690;
+        border: 1px solid var(--tm-border);
+        transition: all .12s ease;
+        white-space: nowrap;
+    }
+    .tm-chip-active {
+        background: linear-gradient(105deg, var(--tm-grad-from), var(--tm-grad-to));
+        color: #fff;
+        border-color: transparent;
+        box-shadow: 0 4px 12px -4px rgba(104, 100, 248, 0.4);
+    }
+
+    /* 부드러운 둥근 아이콘 버튼 */
+    .tm-icon-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        color: #6B7690;
+        transition: background .12s ease, color .12s ease;
+    }
+    .tm-icon-btn:hover { background: #F1F4FB; color: var(--tm-ink); }
+    html.dark .tm-icon-btn:hover { background: #232C44; }
+
+    /* 수신함 메일 카드 */
+    .tm-mail-item {
+        transition: background .12s ease, box-shadow .12s ease;
+    }
+    .tm-mail-item:hover { background: #F7F9FF; }
+    html.dark .tm-mail-item:hover { background: #1D2740; }
+}
+
+@layer utilities {
+    .tm-safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+    .tm-scrollbar-none::-webkit-scrollbar { display: none; }
+    .tm-scrollbar-none { scrollbar-width: none; }
+}
+
+/* prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
     }
 }

@@ -238,3 +238,19 @@ SELECT cron.schedule(
 |--------|------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon 공개 키 (RLS + RPC로 보호) |
+| `RESEND_API_KEY` | (선택) Resend API 키 — 관리자 페이지 발신 기능용. 서버 전용 |
+
+## 🛠️ 관리자 & 발신
+
+### 관리자 페이지 (`/admin`)
+
+- `supabase/migration-admin.sql` 적용 시 `admin_config` 테이블에 관리자 키가 저장됨
+- `/admin` 접속 → 관리자 키 입력 → 공개+잠금 수신함 전체 메일 열람/삭제
+- 권한은 `admin_ok`/`admin_list_emails`/`admin_get_email`/`admin_delete_email` RPC로만 검증 (SECURITY DEFINER, 테이블 직접 조회 불가)
+- 키 변경: `UPDATE admin_config SET v='새키' WHERE k='admin_secret';`
+
+### 발신 (Resend)
+
+- 관리자 페이지에서 `아무이름@sia.kr` / `@mail.sia.kr` 로 발신 가능 (표시이름 자유 지정)
+- 설정: Resend에서 도메인 등록 → DNS 레코드 추가 (`resend._domainkey` TXT, `send`/`rsend` CNAME을 **DNS only**로) → `RESEND_API_KEY`를 Vercel env에 등록 후 재배포
+- 발신 도메인은 인증된 소유 도메인만 허용 — 타인 도메인 사칭은 SPF/DKIM/DMARC에 걸려 도달하지 않으므로 지원하지 않음
