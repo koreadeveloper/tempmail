@@ -229,10 +229,16 @@ export default {
             console.log(`raw_mime 저장 여부: ${raw_mime !== null ? `YES (${rawEmail.byteLength} bytes)` : `NO (${rawEmail.byteLength} bytes > 300KB)`}`);
 
             // ===== 5) DB INSERT =====
+            // sender는 From: 헤더 기준 (표시명 포함). envelope MAIL FROM(message.from)은
+            // Resend 같은 발송 서비스에서 return-path UUID로 오므로 표시용으로 부적합.
+            const parsedFrom = parsed.from;
+            const sender = parsedFrom?.address
+                ? (parsedFrom.name ? `${parsedFrom.name} <${parsedFrom.address}>` : parsedFrom.address)
+                : message.from;
             const emailData = {
                 id: emailId,
                 recipient,
-                sender: message.from,
+                sender,
                 subject: parsed.subject || '(제목 없음)',
                 body_text: parsed.text || '',
                 body_html: bodyHtml,
