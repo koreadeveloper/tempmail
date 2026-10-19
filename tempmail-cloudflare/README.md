@@ -2,11 +2,11 @@
 
 VPS 없이 **완전 서버리스**로 동작하는 1회용(1시간) 임시 이메일 서비스입니다.
 
-> **Production**: [https://tempmail-fawn.vercel.app](https://tempmail-fawn.vercel.app) · 도메인 `sia.kr`
+> **Production**: [https://mail.sia.kr](https://mail.sia.kr) (미러: [tempmail-fawn.vercel.app](https://tempmail-fawn.vercel.app)) · 수신 도메인 `sia.kr` / `mail.sia.kr`
 
 **기능 요약**: 즉시 주소 생성 · Supabase Realtime 실시간 수신함 · OTP/인증번호 자동 추출 ·
-첨부파일(Storage, 개당 5MB) · 메일별 1시간 자동 삭제 + 보관(keep) 토글 ·
-비밀 키(`?k=`) 잠금 수신함 · mailto 전달 · EML 다운로드 · 멀티 주소 바
+첨부파일(Storage, 개당 5MB) + 본문 인라인 이미지(`cid:`) 치환 · 메일별 1시간 자동 삭제 + 보관(keep) 토글 ·
+비밀 키(`?k=`) 잠금 수신함(24시간 TTL 후 자동 해제) · mailto 전달 · EML 다운로드 · 멀티 주소 바 · PWA
 
 ## 🏗️ 아키텍처
 

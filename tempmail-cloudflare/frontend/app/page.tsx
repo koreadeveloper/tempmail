@@ -56,9 +56,12 @@ export default function Home() {
         router.push(`/inbox/${encodeURIComponent(addr)}${key ? `?k=${key}` : ''}`);
     };
 
+    // 헷갈리는 문자 제외: l(소문자L) i 1 o 0 — 육안으로 읽고 입력하기 쉬운 문자만 사용
+    const RANDOM_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
     const handleRandom = () => {
-        const randomName = Math.random().toString(36).substring(2, 10);
-        setUsername(randomName);
+        const bytes = new Uint8Array(8);
+        crypto.getRandomValues(bytes);
+        setUsername(Array.from(bytes, b => RANDOM_CHARS[b % RANDOM_CHARS.length]).join(''));
     };
 
     return (
@@ -110,7 +113,7 @@ export default function Home() {
                                 className="h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                             />
                             <Lock className="h-4 w-4 text-gray-500" />
-                            <span className="text-sm text-gray-700">비공개 수신함 (비밀키로만 열람)</span>
+                            <span className="text-sm text-gray-700">비공개 수신함 (비밀키로만 열람 · 24시간 후 자동 해제)</span>
                         </label>
 
                         {/* Random Button */}

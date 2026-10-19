@@ -9,7 +9,7 @@
   </p>
 
   <p>
-    <a href="https://tempmail-fawn.vercel.app"><img src="https://img.shields.io/badge/Live%20Demo-tempmail--fawn.vercel.app-6366f1?style=flat-square&logo=vercel&logoColor=white" alt="Live Demo" /></a>
+    <a href="https://mail.sia.kr"><img src="https://img.shields.io/badge/Live%20Demo-mail.sia.kr-6366f1?style=flat-square&logo=vercel&logoColor=white" alt="Live Demo" /></a>
     <img src="https://img.shields.io/badge/Next.js-14-000000?style=flat-square&logo=next.js&logoColor=white" alt="Next.js 14" />
     <img src="https://img.shields.io/badge/Cloudflare-Email%20Worker-F38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Email Worker" />
     <img src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20Realtime%20%2B%20Storage-3ECF8E?style=flat-square&logo=supabase&logoColor=white" alt="Supabase" />
@@ -20,14 +20,16 @@
 
 ## ✨ 주요 기능
 
-- **즉시 주소 생성** — 원하는 아이디로 `...@sia.kr` 주소를 바로 발급. 회원가입·로그인 불필요
+- **즉시 주소 생성** — 원하는 아이디로 `...@sia.kr` / `...@mail.sia.kr` 주소를 바로 발급. 회원가입·로그인 불필요
 - **실시간 수신함** — Supabase Realtime 구독으로 메일이 도착하는 순간 화면에 표시 (새 메일 브라우저 알림 포함)
 - **OTP / 인증번호 자동 추출** — 본문에서 인증 코드를 자동 인식해 원클릭 복사
 - **첨부파일 지원** — Supabase Storage 업로드 (개당 최대 5MB), 클릭 한 번으로 다운로드
+- **본문 인라인 이미지** — `cid:` 삽입 이미지도 Storage 업로드 후 실제 URL로 치환해 표시
 - **1시간 자동 삭제** — 메일별 60분 수명 (pg_cron), `보관(keep)` 토글로 필요한 메일은 예외 처리
-- **잠금 수신함** — 생성 시 발급되는 비밀 키(`?k=`)가 있어야만 열람 가능한 비공개 모드
+- **잠금 수신함** — 비밀 키(`?k=`)가 있어야만 열람 가능한 비공개 모드, 생성 후 **24시간 뒤 자동 해제**
 - **mailto 전달 & EML 다운로드** — 받은 메일을 내 메일앱으로 전달하거나 `.eml` 원본 저장
 - **멀티 주소 바** — 여러 임시 주소를 동시에 띄워두고 전환하며 사용
+- **PWA** — 홈 화면에 추가하면 앱처럼 실행 (standalone), OG/Twitter 카드 메타 포함
 
 ## 🏗️ 아키텍처
 

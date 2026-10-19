@@ -55,6 +55,8 @@ function InboxContent() {
     const [showRaw, setShowRaw] = useState(false);
     const [toast, setToast] = useState<{ sender: string; subject: string } | null>(null);
     const [now, setNow] = useState(() => Date.now());
+    const [linkBannerDismissed, setLinkBannerDismissed] = useState(false);
+    const [linkCopied, setLinkCopied] = useState(false);
 
     const knownIdsRef = useRef<Set<string>>(new Set());
     const initializedRef = useRef(false);
@@ -156,6 +158,12 @@ function InboxContent() {
         setTimeout(() => setCopySuccess(false), 2000);
     };
 
+    const handleCopyLink = async () => {
+        await navigator.clipboard.writeText(window.location.href);
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2000);
+    };
+
     const handleCopyOtp = async (code: string) => {
         await navigator.clipboard.writeText(code);
         setOtpCopied(true);
@@ -206,8 +214,9 @@ function InboxContent() {
     };
 
     const handleForward = (email: Email) => {
+        // mailto: URL 길이 제한(~2000자 안전) — 본문은 미리 잘라서 인코딩 후 중간 잘림 방지
         const subject = encodeURIComponent(`Fwd: ${email.subject || ''}`);
-        const body = encodeURIComponent((email.body_text || '').slice(0, 2000));
+        const body = encodeURIComponent((email.body_text || '').slice(0, 1200));
         window.location.href = `mailto:?subject=${subject}&body=${body}`;
     };
 
@@ -232,10 +241,15 @@ function InboxContent() {
                         <h1 className="text-xl font-bold text-gray-900">잠긴 수신함입니다</h1>
                         <p className="text-sm text-gray-500 mt-2">{address}</p>
                     </div>
+                    <p className="text-xs text-gray-500 mb-3 leading-relaxed">
+                        이 수신함은 생성 시 자동 발급된 <strong>비밀키</strong>로만 열립니다.
+                        비밀키는 수신함 링크의 <code className="bg-gray-100 px-1 rounded">?k=</code> 부분입니다 —
+                        링크를 저장해뒀다면 그대로 접속하세요.
+                    </p>
                     <div className="flex gap-2">
                         <input
                             type="password"
-                            placeholder="비밀번호 입력"
+                            placeholder="비밀키 입력"
                             value={unlockKey}
                             onChange={(e) => setUnlockKey(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
@@ -250,7 +264,7 @@ function InboxContent() {
                         </button>
                     </div>
                     {unlockError && (
-                        <p className="text-sm text-red-500 mt-3 text-center">비밀번호가 올바르지 않습니다</p>
+                        <p className="text-sm text-red-500 mt-3 text-center">비밀키가 올바르지 않습니다</p>
                     )}
                     <button
                         onClick={() => router.push('/')}
@@ -317,6 +331,35 @@ function InboxContent() {
                         </div>
                     </div>
                 </div>
+
+                {/* Secret link notice — locked inboxes only */}
+                {secret && !linkBannerDismissed && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center gap-3">
+                        <Lock className="h-5 w-5 text-blue-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-blue-800">
+                                이 수신함은 비밀 링크로만 열립니다 — 링크를 저장해두세요
+                            </p>
+                            <p className="text-xs text-blue-600 mt-0.5">
+                                잠금은 생성 후 24시간 뒤 자동 해제되며, 이후 공개 수신함이 됩니다
+                            </p>
+                        </div>
+                        <button
+                            onClick={handleCopyLink}
+                            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                            {linkCopied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                            {linkCopied ? '복사됨' : '링크 복사'}
+                        </button>
+                        <button
+                            onClick={() => setLinkBannerDismissed(true)}
+                            aria-label="닫기"
+                            className="shrink-0 p-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+                )}
 
                 {/* Email List */}
                 <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">

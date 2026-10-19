@@ -5,8 +5,10 @@
  * - URL trailing slash 자동 처리
  * - 상세 디버깅 로그
  * - 실패 시 message.setReject()로 발신자에게 반송 (조용한 드랍 방지)
- * - 잠금 인박스(inbox_keys.locked=true) → emails_locked 테이블로 라우팅
+ * - 잠금 인박스(inbox_keys.locked=true, expires_at 미만) → emails_locked 테이블로 라우팅
+ *   잠금은 생성 후 24시간(TTL) 뒤 자동 해제되어 공개 수신함으로 복귀
  * - 첨부파일 → Supabase Storage 'attachments' 버킷 업로드 (실패해도 메일 저장은 계속)
+ * - 인라인 이미지(cid: 참조)도 Storage에 업로드 후 본문 HTML의 cid: 를 공개 URL로 치환
  * - raw_mime 컬럼에 원본 MIME 저장 (300KB 이하만)
  * - FORWARD_MAP 기반 자동 전달 (DB 저장 성공 후에만, 실패해도 반송 안 함)
  */
@@ -85,7 +87,7 @@ export default {
             const recipient = message.to.toLowerCase();
 
             // ===== 1) 잠금 인박스 여부 조회 → 테이블 결정 =====
-            const lockUrl = `${baseUrl}/rest/v1/inbox_keys?address=eq.${encodeURIComponent(recipient)}&select=locked`;
+            const lockUrl = `${baseUrl}/rest/v1/inbox_keys?address=eq.${encodeURIComponent(recipient)}&select=locked,expires_at`;
             console.log(`인박스 잠금 조회: ${lockUrl}`);
 
             const lockRes = await fetch(lockUrl, {
@@ -105,8 +107,11 @@ export default {
                 throw new Error(`inbox_keys lookup failed: ${lockRes.status} - ${lockErr}`);
             }
 
-            const lockRows = (await lockRes.json()) as { locked?: boolean }[];
-            const locked = lockRows[0]?.locked === true;
+            const lockRows = (await lockRes.json()) as { locked?: boolean; expires_at?: string | null }[];
+            const lockRow = lockRows[0];
+            // 잠금은 expires_at 전까지만 유효 — 만료 시 공개 수신함으로 복귀
+            const locked = lockRow?.locked === true &&
+                (!lockRow.expires_at || new Date(lockRow.expires_at).getTime() > Date.now());
             const table = locked ? 'emails_locked' : 'emails';
             console.log(`인박스 상태: ${locked ? '🔒 LOCKED' : '🔓 unlocked'} → 테이블: ${table}`);
 
@@ -124,11 +129,15 @@ export default {
             const attachments = parsed.attachments || [];
             console.log(`첨부파일 개수: ${attachments.length}`);
 
+            // 인라인(cid:) 이미지 → 본문 src 치환용 매핑
+            const cidUrls: { cid: string; filename: string; url: string }[] = [];
+
             let uploadCount = 0;
 
             for (const att of attachments) {
-                if (att.related === true) {
-                    continue; // 인라인 관련 첨부(cid 이미지 등)는 제외
+                const isInline = att.related === true && !!att.contentId;
+                if (att.related === true && !att.contentId) {
+                    continue; // cid 없는 인라인 관련 첨부는 치환 불가 → 스킵
                 }
                 if (uploadCount >= MAX_ATTACHMENTS) {
                     console.log(`⚠️ 첨부파일 최대 ${MAX_ATTACHMENTS}개 초과 — 나머지 스킵`);
@@ -136,7 +145,11 @@ export default {
                 }
 
                 const originalName = att.filename || '';
-                const safeName = sanitizeFilename(att.filename);
+                const bareCid = att.contentId ? att.contentId.replace(/^<|>$/g, '') : '';
+                // 인라인 첨부는 파일명이 없는 경우가 많음 → cid로 대체 경로 생성
+                const safeName = originalName
+                    ? sanitizeFilename(originalName)
+                    : (isInline && bareCid ? sanitizeFilename(`inline-${bareCid}`) : 'file');
 
                 try {
                     // content가 string(base64 등)으로 올 수도 있으므로 바이트로 통일
@@ -175,20 +188,39 @@ export default {
                         continue; // 업로드 실패해도 메일 저장은 계속
                     }
 
-                    metas.push({
-                        name: originalName || safeName,
-                        size: bytes.byteLength,
-                        contentType,
-                        path: `${emailId}/${safeName}`,
-                    });
-                    console.log(`📎 첨부파일 저장 완료: ${safeName} (${bytes.byteLength} bytes)`);
+                    if (isInline && att.contentId) {
+                        const publicUrl = `${baseUrl}/storage/v1/object/public/attachments/${encodeURIComponent(emailId)}/${encodeURIComponent(safeName)}`;
+                        cidUrls.push({ cid: bareCid, filename: originalName, url: publicUrl });
+                        console.log(`🖼️ 인라인 이미지 업로드: ${safeName} (cid:${bareCid})`);
+                    } else {
+                        metas.push({
+                            name: originalName || safeName,
+                            size: bytes.byteLength,
+                            contentType,
+                            path: `${emailId}/${safeName}`,
+                        });
+                        console.log(`📎 첨부파일 저장 완료: ${safeName} (${bytes.byteLength} bytes)`);
+                    }
                 } catch (attErr) {
                     // 첨부 하나 실패해도 메일 자체는 저장
                     console.error(`⚠️ 첨부파일 처리 예외: ${safeName}`, attErr);
                 }
             }
 
-            console.log(`업로드된 첨부파일 수: ${metas.length}`);
+            console.log(`업로드된 첨부파일 수: ${metas.length}, 인라인 이미지 수: ${cidUrls.length}`);
+
+            // 본문 HTML의 cid: 참조를 Storage 공개 URL로 치환
+            let bodyHtml = parsed.html || '';
+            if (bodyHtml && cidUrls.length > 0) {
+                for (const c of cidUrls) {
+                    const refs = [c.cid, `<${c.cid}>`, c.filename, encodeURIComponent(c.filename)]
+                        .filter((r): r is string => !!r);
+                    for (const ref of refs) {
+                        bodyHtml = bodyHtml.split(`cid:${ref}`).join(c.url);
+                    }
+                }
+                console.log(`cid: 치환 완료 (${cidUrls.length}개 매핑)`);
+            }
 
             // ===== 4) raw_mime (300KB 초과 시 null) =====
             const raw_mime = rawEmail.byteLength <= MAX_RAW_MIME_SIZE
@@ -203,7 +235,7 @@ export default {
                 sender: message.from,
                 subject: parsed.subject || '(제목 없음)',
                 body_text: parsed.text || '',
-                body_html: parsed.html || '',
+                body_html: bodyHtml,
                 attachments: metas,
                 raw_mime,
             };
